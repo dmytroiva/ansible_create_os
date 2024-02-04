@@ -1,0 +1,77 @@
+##Встановлення локалі
+d-i debian-installer/locale string en_US.UTF-8
+d-i debian-installer/country string UA
+d-i debian-installer/language string en
+d-i localechooser/supported-locales multiselect en_US.UTF8, uk_UA.utf8
+
+##Налаштування клавіатури
+d-i keyboard-configuration/xkb-keymap select us
+d-i keyboard-configuration/variant select American English
+
+##Налаштування мережі. Якщо не знаємо інтерфейс, то ставимо auto.
+d-i netcfg/choose_interface select auto
+d-i netcfg/get_hostname string debian
+d-i netcfg/get_domain string local
+
+##Налаштування часового поясу
+d-i time/zone string Europe/Kyiv
+d-i clock-setup/utc boolean true
+d-i clock-setup/ntp boolean true
+
+##Створення розділів
+d-i partman-auto/method string regular
+d-i partman-auto/choose_recipe select atomic
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+
+##Установка базової системи
+d-i base-installer/kernel/image string linux-generic
+
+##Налаштування дзеркала для завантаження пакетів
+d-i mirror/country string manual
+d-i mirror/http/hostname string httpredir.debian.org
+d-i mirror/http/directory string /debian
+d-i mirror/http/proxy string
+
+##Налаштування облікових записів
+d-i passwd/root-login boolean false
+d-i passwd/make-user boolean true
+d-i passwd/user-fullname string Deploy User
+d-i passwd/username string deploy
+d-i passwd/user-password password deploy
+d-i passwd/user-password-again password deploy
+
+##Встановлюємо тільки ssh-server Вибір та установка пакетів
+tasksel tasksel/first multiselect standard, ssh-server
+#d-i pkgsel/include string sudo mc vim traceroute cloud-init openssh-server apt-transport-https ca-certificates curl gnupg2 software-properties-common docker
+
+##Для встановлення docker
+#d-i apt-setup/local0/repository string https://download.docker.com/linux/debian "$(lsb_release -cs)" stable
+#d-i apt-setup/local0/comment string docker
+#d-i apt-setup/local0/key string https://download.docker.com/linux/debian/gpg
+
+##Налаштування GRUB
+d-i grub-installer/only_debian boolean true
+d-i grub-installer/with_other_os boolean true
+d-i grub-installer/bootdev string default
+
+##Додавання репозиторію Docker, встановлення пакетів і налаштування користувача
+d-i preseed/late_command string \
+    cp -R ./install/deb-packages /target/tmp/; \
+ #   in-target /bin/sh -c 'apt install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common vim'; \
+ #   in-target /bin/sh -c 'curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -'; \
+ #   in-target /bin/sh -c 'add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable"'; \
+    in-target /bin/sh -c 'dpkg -i /tmp/deb-packages/*.deb'; \
+    in-target /bin/sh -c 'apt-get update'; \
+    in-target /bin/sh -c 'apt-get install -f -y'; \
+ #   in-target /bin/sh -c 'apt-get install -y docker-ce docker-ce-cli containerd.io'; \
+    in-target /bin/sh -c 'usermod -aG docker deploy';
+    echo "deploy ALL=(ALL) NOPASSWD: ALL" > /target/etc/sudoers.d/000-deploy; \
+    in-target /bin/sh -c 'apt-key add ./install/docker-bookworm-keyring.gpg';
+    in-target /bin/sh -c 'rm -rf /tmp/deb-packages'; \
+
+##Завершення встановлення
+d-i finish-install/reboot_in_progress note
+d-i debian-installer/exit/poweroff boolean true

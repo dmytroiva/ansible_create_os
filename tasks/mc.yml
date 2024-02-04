@@ -1,0 +1,11 @@
+---
+
+- name: Install mc
+  become: true
+  apt: pkg=mc state=present
+
+- name: Set mcedit as default editor
+  become: true
+  template: src=.selected_editor.j2 dest={{ item }}/.selected_editor mode=0664
+  when: mc_set_as_default_editor == true
+  with_items: "{{ mc_users_home_path }}"

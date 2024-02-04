@@ -1,0 +1,165 @@
+---
+- name: Створення та налаштування Debian VM
+  hosts: "{{ ip_host }}"
+  become: yes
+  vars_prompt:
+    - name: "debian_version"
+      prompt: "Введіть версію Debian (1 для 9, 2 для 10, 3 для 12)"
+      private: no
+
+  vars:
+    base_url: "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/"
+    base_docker_url: "https://download.docker.com/linux/"
+    version_9: "debian-9.13.0-amd64-netinst.iso"
+    version_10: "debian-10.13.0-amd64-netinst.iso"
+    version_12: "debian-12.2.0-amd64-netinst.iso"
+    preseed_file: "./templates/debian.bookworm.cfg.j2"
+    output_iso_name: "{{ debian_image_name | regex_replace('\\.iso$', '') }}-autoinstall.iso"
+    dest_directory: "/home/dmytro/debian-auto-install-image-building"
+    dest_debian: "debian-iso-sources"
+    debian_codename: "bookworm"
+    docker_packages:
+      - "containerd.io_1.6.25-1_amd64.deb"
+      - "docker-ce_24.0.7-1~debian.12~bookworm_amd64.deb"
+      - "docker-buildx-plugin_0.11.2-1~debian.12~bookworm_amd64.deb"
+      - "docker-ce-cli_24.0.7-1~debian.12~bookworm_amd64.deb"
+      - "docker-compose-plugin_2.21.0-1~debian.12~bookworm_amd64.deb"
+
+  tasks:
+    - name: get the username running the deploy
+      become: false
+      local_action: command whoami
+      register: username_on_the_host
+
+    - name: Генерація URL для завантаження образу Debian
+      set_fact:
+        debian_image_url: "{{ base_url }}{{ version_9 if debian_version == '1' else (version_10 if debian_version == '2' else version_12) }}"
+        debian_image_name: "{{ version_9 if debian_version == '1' else (version_10 if debian_version == '2' else version_12) | basename }}"
+
+    - name: Генерація docker-URL для завантаження deb-пакетів
+      set_fact:
+        debian_deb_url: "{{ base_docker_url }}debian/dists/{{ debian_codename }}/pool/stable/amd64/"
+
+    - name: Створення каталогу для зберігання ISO
+      file:
+        path: "{{ dest_directory }}"
+        state: directory
+
+    - name: Створення каталогу для deb-пакетів
+      file:
+        path: "{{ dest_directory }}/{{ dest_debian }}/install/deb-packages"
+        state: directory
+
+    - name: Завантаження образу Debian
+      get_url:
+        url: "{{ debian_image_url }}"
+        dest: "{{ dest_directory }}/{{ debian_image_name | basename }}"
+
+    - name: Завантаження docker deb-пакетів
+      get_url:
+        url: "{{ debian_deb_url }}{{ item }}"
+        dest: "{{ dest_directory }}/{{ dest_debian }}/install/deb-packages/{{ item }}"
+        validate_certs: no
+      loop: "{{ docker_packages }}"
+
+    - name: Встановлення необхідних утиліт
+      apt:
+        name:
+          - p7zip-full
+          - xorriso
+          - wget
+          - whois
+        state: present
+        update_cache: yes
+
+    - name: Розпакування завантаженого ISO образу Debian
+      command:
+        cmd: "7z -y x {{ dest_directory }}/{{ debian_image_name | basename }} -o{{ dest_directory }}/{{ dest_debian }}"
+
+    - name: Зробити Automated Install Debian стандартним пунктом меню
+      ansible.builtin.lineinfile:
+        path: "{{ dest_directory }}/{{ dest_debian }}/isolinux/txt.cfg"
+        regexp: "^default .*"
+        line: "default autoinstall"
+        state: present
+
+    # Оновлено: Змінено порядок пунктів у txt.cfg
+    - name: Додати пункт Automated Install Debian в txt.cfg
+      ansible.builtin.blockinfile:
+        path: "{{ dest_directory }}/{{ dest_debian }}/isolinux/txt.cfg"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          label autoinstall
+          menu label ^Automated Install {{ debian_image_name | basename }}
+          menu default
+          kernel /install.amd/vmlinuz
+          append auto=true priority=critical vga=788 preseed/file=/cdrom/preseed.cfg initrd=/install.amd/initrd.gz --- quiet
+
+    - name: Змінити тайм-аут у всіх cfg файлах в каталозі isolinux
+      ansible.builtin.lineinfile:
+        path: "{{ dest_directory }}/{{ dest_debian }}/isolinux/{{ item }}"
+        regexp: "^timeout .*"
+        line: "timeout 05"
+      with_items:
+        - txt.cfg
+        - menu.cfg
+        - adtxt.cfg
+        - adgtk.cfg
+        - rqtxt.cfg
+        - rqgtk.cfg
+        - isolinux.cfg
+        - prompt.cfg
+
+    - name: Очищення файлів конфігурації меню
+      ansible.builtin.copy:
+        dest: "{{ dest_directory }}/{{ dest_debian }}/isolinux/{{ item }}"
+        content: |
+          # Цей файл було очищено Ansible
+      with_items:
+        - "adspkgtk.cfg"
+        - "adtxt.cfg"
+        - "rqtxt.cfg"
+        - "rqspkgtk.cfg"
+        - "spkgtk.cfg"
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Видалення пункту 'Install with speech synthesis' з grub.cfg
+      ansible.builtin.replace:
+        path: "{{ dest_directory }}/{{ dest_debian }}/boot/grub/grub.cfg"
+        regexp: "menuentry --hotkey=s 'Install with speech synthesis' \\{[^}]*\\}"
+        replace: ""
+
+    - name: Генерація preseed файлу з шаблону
+      template:
+        src: debian_offline.bookworm.cfg.j2
+        dest: "{{ dest_directory }}/{{ dest_debian }}/preseed.cfg"
+        owner: "{{ username_on_the_host.stdout }}"
+        group: "{{ username_on_the_host.stdout }}"
+        mode: "0644"
+
+    - name: Генерація docker.gpg ключа для оффлайн встановлення
+      template:
+        src: docker-bookworm-keyring.gpg.j2
+        dest: "{{ dest_directory }}/{{ dest_debian }}/install/docker-bookworm-keyring.gpg"
+
+    - name: Створення образу з автовстановленням
+      shell: |
+        xorriso -as mkisofs -r -J -V "Debian Auto Install" \
+        -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot \
+        -boot-load-size 4 -boot-info-table -eltorito-alt-boot \
+        -e boot/grub/efi.img -no-emul-boot -isohybrid-gpt-basdat \
+        -o {{ dest_directory }}/{{ output_iso_name }} {{ dest_directory }}/{{ dest_debian }}
+      args:
+        chdir: "{{ dest_directory }}/{{ dest_debian }}"
+
+    - name: Зміна власника для директорії "{{ dest_directory }}"
+      ansible.builtin.file:
+        path: "{{ dest_directory }}"
+        owner: "{{ username_on_the_host.stdout }}"
+        group: "{{ username_on_the_host.stdout }}"
+        recurse: yes
+
+    - name: Видалення тимчасової директорії
+      file:
+        path: "{{ dest_directory }}/{{ dest_debian }}"
+        state: absent
