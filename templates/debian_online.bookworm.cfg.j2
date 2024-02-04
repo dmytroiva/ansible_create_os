@@ -15,7 +15,7 @@ d-i netcfg/choose_interface select auto
 ## Встановлення імені хосту. Будь-яке ім’я хоста та доменне ім’я, призначене dhcp, має пріоритет
 ## над значеннями, встановленими тут. Однак встановлення значень все одно запобігає показу запитань,
 ## навіть якщо значення надходять із dhcp.
-d-i netcfg/get_hostname string scte35hls-monitoring
+d-i netcfg/get_hostname string monitoring
 d-i netcfg/get_domain string local
 
 # Вибрати певний інтерфейс:
@@ -36,7 +36,7 @@ d-i netcfg/dhcp_options select Configure network manually
 d-i netcfg/get_ipaddress string 10.7.234.11
 d-i netcfg/get_netmask string 255.255.255.0
 d-i netcfg/get_gateway string 10.7.234.1
-d-i netcfg/get_nameservers string 95.67.0.252 95.67.0.253
+d-i netcfg/get_nameservers string 8.8.4.4 8.8.8.8
 d-i netcfg/confirm_static boolean true 
 #}
 ##
