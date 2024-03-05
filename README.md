@@ -114,6 +114,34 @@ localhost                  : ok=17   changed=11   unreachable=0    failed=0    s
 
 This will start the process of creating a Debian image based on the specifications you've provided.
 
+### Якщо при перевірці згенерованного url виникла помилка 404
+<details>
+  <summary>Якщо на етапі перевірки згенерованного посилання, виникає помилка, то це означає, що компанія Debian оновила версію образу
+Debian:</summary>
+
+```bash
+TASK [Перевірка URL перед завантаженням Debian-iso] *****************************************************************************************************************************************************************************
+fatal: [localhost]: FAILED! => {"changed": false, "connection": "close", "content_type": "text/html; charset=iso-8859-1", "date": "Tue, 05 Mar 2024 09:26:53 GMT", "elapsed": 0, "msg": "Status code was 404 and not [200]: HTTP Error 404: Not Found", "redirected": false, "server": "Apache/2.4.58 (Unix)", "status": 404, "url": "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.4.0-amd64-netinst.iso"}
+...ignoring
+```
+
+Потрібно змінити значення змінної у `downolad_debian_online.yml` на актуальне.
+Наприклад, у минулому місяці була версія 12.4.0, а зараз 12.5.0. Змінюємо значення 12.**4**.0 на 12.**5**.0:
+
+`version_12: "debian-12.5.0-amd64-netinst.iso"`
+
+Як зрозуміти, на яку версію змінювати. Відкриваємо згенероване посилання
+https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.4.0-amd64-netinst.iso
+і видаляємо версію `debian-12.4.0-amd64-netinst.iso`і переходимо у браузері на це посилання
+https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/. 
+
+У ньому бачимо, що версія стала **12.5.0**
+![img.png](img.png)
+
+Після того як змінили, запускаємо плейбук ще раз
+</details>
+
+
 Contribution
 Feel free to fork the project, make your changes, and submit a pull request. We appreciate your contributions to improve the project!
 
